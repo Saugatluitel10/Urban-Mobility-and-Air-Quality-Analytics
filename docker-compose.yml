@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: urban-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://urban_user:urban_pass@db:5432/urban_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: urban-db
+    environment:
+      - POSTGRES_USER=urban_user
+      - POSTGRES_PASSWORD=urban_pass
+      - POSTGRES_DB=urban_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: urban-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  db_data:
+  redis_data:
