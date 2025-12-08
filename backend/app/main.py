@@ -1,7 +1,8 @@
 from fastapi import FastAPI
-
+from .api import router as api_router
 
 app = FastAPI(title="Urban Mobility and Air Quality Analytics API")
+app.include_router(api_router)
 
 
 @app.get("/health", tags=["system"])
