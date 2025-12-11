@@ -1,10 +1,21 @@
 import React, { useState } from "react";
+import Plot from "react-plotly.js";
 
 export default function Simulation() {
   const [privateVehicleReduction, setPrivateVehicleReduction] = useState(0);
   const [oddEvenPolicy, setOddEvenPolicy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+
+  const trafficBaseline = result?.baseline?.traffic_congestion_index ?? null;
+  const trafficScenario = result?.scenario?.traffic_congestion_index ?? null;
+  const aqiBaseline = result?.baseline?.aqi ?? null;
+  const aqiScenario = result?.scenario?.aqi ?? null;
+  const hasChartData =
+    trafficBaseline !== null &&
+    trafficScenario !== null &&
+    aqiBaseline !== null &&
+    aqiScenario !== null;
 
   const runSimulation = () => {
     setLoading(true);
@@ -62,7 +73,43 @@ export default function Simulation() {
         {result && (
           <div className="bg-white rounded shadow p-4">
             <div className="font-bold mb-2">Simulation Results</div>
-            <pre className="whitespace-pre-wrap text-xs">{JSON.stringify(result, null, 2)}</pre>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <pre className="whitespace-pre-wrap text-xs bg-gray-50 p-2 rounded border">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+              {hasChartData && (
+                <div className="h-72">
+                  <Plot
+                    data={[
+                      {
+                        x: ["Baseline", "Scenario"],
+                        y: [trafficBaseline, trafficScenario],
+                        type: "bar",
+                        name: "Traffic congestion index",
+                        marker: { color: ["#9ca3af", "#2563eb"] },
+                      },
+                      {
+                        x: ["Baseline", "Scenario"],
+                        y: [aqiBaseline, aqiScenario],
+                        type: "bar",
+                        name: "AQI",
+                        marker: { color: ["#facc15", "#16a34a"] },
+                      },
+                    ]}
+                    layout={{
+                      title: "Impact on Traffic and AQI (mock visualization)",
+                      barmode: "group",
+                      margin: { t: 40, r: 20, b: 40, l: 40 },
+                      legend: { orientation: "h" },
+                      paper_bgcolor: "rgba(0,0,0,0)",
+                      plot_bgcolor: "rgba(0,0,0,0)",
+                    }}
+                    config={{ displayModeBar: false, responsive: true }}
+                    style={{ width: "100%", height: "100%" }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

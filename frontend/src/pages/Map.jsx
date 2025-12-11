@@ -2,15 +2,24 @@ import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { Circle, Polyline, useMap } from "react-leaflet";
+import AnimatedWindArrow from "../components/AnimatedWindArrow";
+
 const LAYER_TYPES = [
   { key: "aqi", label: "AQI Sensors" },
   { key: "traffic", label: "Traffic Sensors" },
+];
+const OVERLAY_TYPES = [
+  { key: "heatmap", label: "AQI Heatmap" },
+  { key: "wind", label: "Wind Arrows" },
+  { key: "policy", label: "Policy Zones" },
 ];
 
 export default function MapPage() {
   const [sensors, setSensors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeLayer, setActiveLayer] = useState("aqi");
+  const [activeOverlays, setActiveOverlays] = useState({ heatmap: false, wind: false, policy: false });
 
   useEffect(() => {
     fetch("/sensors")
@@ -52,8 +61,38 @@ export default function MapPage() {
             {layer.label}
           </button>
         ))}
+        <span className="ml-6 text-sm">Overlays:</span>
+        {OVERLAY_TYPES.map((overlay) => (
+          <label key={overlay.key} className="inline-flex items-center ml-2">
+            <input
+              type="checkbox"
+              checked={!!activeOverlays[overlay.key]}
+              onChange={() => setActiveOverlays((prev) => ({ ...prev, [overlay.key]: !prev[overlay.key] }))}
+              className="mr-1"
+            />
+            {overlay.label}
+          </label>
+        ))}
       </div>
-      <div className="rounded overflow-hidden" style={{ height: 400 }}>
+      <div className="rounded overflow-hidden w-full" style={{ height: 400, maxWidth: '100vw' }}>
+        {/* Overlay Legends */}
+        <div className="absolute z-10 bg-white bg-opacity-80 rounded shadow px-3 py-2 text-xs flex flex-col gap-1 mt-2 ml-2">
+          {activeOverlays.heatmap && (
+            <div><span className="inline-block w-3 h-3 rounded-full mr-1" style={{background: 'red'}}></span> AQI High</div>
+          )}
+          {activeOverlays.heatmap && (
+            <div><span className="inline-block w-3 h-3 rounded-full mr-1" style={{background: 'orange'}}></span> AQI Medium</div>
+          )}
+          {activeOverlays.heatmap && (
+            <div><span className="inline-block w-3 h-3 rounded-full mr-1" style={{background: 'yellow'}}></span> AQI Low</div>
+          )}
+          {activeOverlays.wind && (
+            <div><span className="inline-block w-3 h-0.5 bg-blue-500 mr-1" style={{width: '16px'}}></span> Wind direction</div>
+          )}
+          {activeOverlays.policy && (
+            <div><span className="inline-block w-3 h-0.5 bg-green-700 mr-1" style={{width: '16px', borderBottom: '2px dashed'}}></span> Policy zone</div>
+          )}
+        </div>
         <MapContainer
           center={markers.length ? [markers[0].lat, markers[0].lng] : defaultCenter}
           zoom={12}
@@ -63,6 +102,21 @@ export default function MapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"
           />
+          {/* Mock AQI Heatmap overlay (replace with backend data) */}
+          {activeOverlays.heatmap && [
+            <Circle key="heat1" center={[27.71, 85.32]} radius={700} pathOptions={{ color: 'red', fillOpacity: 0.3 }} />,
+            <Circle key="heat2" center={[27.69, 85.34]} radius={500} pathOptions={{ color: 'orange', fillOpacity: 0.2 }} />,
+            <Circle key="heat3" center={[27.7, 85.29]} radius={400} pathOptions={{ color: 'yellow', fillOpacity: 0.15 }} />
+          ]}
+          {/* Mock wind overlay (arrows as polylines) */}
+          {activeOverlays.wind && [
+            <Polyline key="wind1" positions={[[27.7, 85.32], [27.705, 85.325]]} pathOptions={{ color: 'blue', weight: 3 }} />,
+            <Polyline key="wind2" positions={[[27.69, 85.33], [27.695, 85.335]]} pathOptions={{ color: 'blue', weight: 3 }} />
+          ]}
+          {/* Mock policy overlay (polygon boundary) */}
+          {activeOverlays.policy && [
+            <Polyline key="policy1" positions={[[27.7,85.32],[27.705,85.34],[27.71,85.33],[27.7,85.32]]} pathOptions={{ color: 'green', weight: 4, dashArray: '8 8' }} />
+          ]}
           {markers.map((s) => (
             <Marker key={s.id} position={[s.lat, s.lng]}>
               <Popup>

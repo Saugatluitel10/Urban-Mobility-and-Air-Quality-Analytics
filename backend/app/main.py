@@ -1,8 +1,15 @@
 from fastapi import FastAPI
 from .api import router as api_router
+from .db import engine
+from .models import Base
 
 app = FastAPI(title="Urban Mobility and Air Quality Analytics API")
 app.include_router(api_router)
+
+
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
 
 
 @app.get("/health", tags=["system"])

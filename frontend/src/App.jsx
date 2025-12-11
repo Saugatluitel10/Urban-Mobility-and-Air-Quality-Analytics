@@ -5,6 +5,11 @@ import MapPage from "./pages/Map";
 import Forecast from "./pages/Forecast";
 import Simulation from "./pages/Simulation";
 import Docs from "./pages/Docs";
+import CausalInsights from "./pages/CausalInsights";
+import HistoricalAnalysis from "./pages/HistoricalAnalysis";
+import DataExplorer from "./pages/DataExplorer";
+import AdminOps from "./pages/AdminOps";
+import About from "./pages/About";
 
 export default function App() {
   return (
@@ -22,6 +27,11 @@ export default function App() {
         <Route path="/forecast" element={<Forecast />} />
         <Route path="/simulation" element={<Simulation />} />
         <Route path="/docs" element={<Docs />} />
+        <Route path="/causal" element={<CausalInsights />} />
+        <Route path="/history" element={<HistoricalAnalysis />} />
+        <Route path="/data" element={<DataExplorer />} />
+        <Route path="/admin" element={<AdminOps />} />
+        <Route path="/about" element={<About />} />
       </Routes>
     </Router>
   );
