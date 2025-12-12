@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from "react";
+import Plot from "react-plotly.js";
 
 export default function Home() {
   const [summary, setSummary] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
     fetch("/summary")
@@ -10,6 +13,20 @@ export default function Home() {
       .then((data) => {
         setSummary(data);
         setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetch("/history/summary?days=7")
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        setHistory(data);
+      })
+      .catch(() => {
+        setHistory(null);
+      })
+      .finally(() => {
+        setHistoryLoading(false);
       });
   }, []);
 
@@ -46,6 +63,36 @@ export default function Home() {
                 <div className="text-xs text-gray-500">
                   Last update: {item.last_update ? new Date(item.last_update).toLocaleString() : "--"}
                 </div>
+                {!historyLoading &&
+                  history &&
+                  history.dates &&
+                  history.aqi &&
+                  history.aqi[item.city] && (
+                    <div className="mt-2">
+                      <Plot
+                        data={[
+                          {
+                            x: history.dates,
+                            y: history.aqi[item.city],
+                            type: "scatter",
+                            mode: "lines",
+                            line: { color: "#2563eb" },
+                            hoverinfo: "y",
+                          },
+                        ]}
+                        layout={{
+                          margin: { t: 4, r: 4, b: 4, l: 30 },
+                          xaxis: { visible: false },
+                          yaxis: { title: "AQI", tickfont: { size: 8 } },
+                          height: 80,
+                          paper_bgcolor: "rgba(0,0,0,0)",
+                          plot_bgcolor: "rgba(0,0,0,0)",
+                        }}
+                        config={{ displayModeBar: false, responsive: true }}
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                    </div>
+                  )}
               </div>
             ))}
       </div>

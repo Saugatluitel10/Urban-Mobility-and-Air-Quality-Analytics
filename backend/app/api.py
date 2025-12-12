@@ -5,6 +5,7 @@ from .models import City, Sensor, AirQualityReading, TrafficReading
 from datetime import datetime, timedelta
 import os
 import json
+import math
 import redis
 from pydantic import BaseModel
 
@@ -26,6 +27,7 @@ CACHE_TTL_SUMMARY = 30
 CACHE_TTL_FORECAST = 300
 CACHE_TTL_SENSORS = 300
 CACHE_TTL_HISTORY = 300
+CACHE_TTL_OVERLAYS = 60
 
 
 def get_cached_json(key: str):
@@ -85,10 +87,20 @@ def compute_summary(db: Session):
     return result
 
 
-def build_history_from_db(db: Session, days: int):
-    end = datetime.utcnow()
-    start = end - timedelta(days=days)
-    dates = [start.date() + timedelta(days=i) for i in range(days)]
+def build_history_from_db(db: Session, days: int = 7, start: datetime | None = None, end: datetime | None = None):
+    if start is None or end is None:
+        end = datetime.utcnow()
+        start = end - timedelta(days=days)
+
+    if end <= start:
+        return None
+
+    base_date = start.date()
+    total_days = (end.date() - base_date).days + 1
+    if total_days <= 0:
+        total_days = 1
+
+    dates = [base_date + timedelta(days=i) for i in range(total_days)]
     date_ranges = []
     for d in dates:
         day_start = datetime(d.year, d.month, d.day)
@@ -205,6 +217,59 @@ def build_mock_history():
     }
 
 
+def build_overlays_from_sensors(db: Session):
+    sensors = db.query(Sensor).all()
+    heatmap_points = []
+    wind_vectors = []
+    for s in sensors:
+        meta = s.meta or {}
+        lat = meta.get("lat")
+        lng = meta.get("lng")
+        if lat is None or lng is None:
+            continue
+
+        if s.type == "air":
+            aqi = meta.get("aqi")
+            base_radius = 500.0
+            radius = base_radius
+            if aqi is not None:
+                try:
+                    radius = base_radius + (float(aqi) / 200.0) * 400.0
+                except (TypeError, ValueError):
+                    radius = base_radius
+            heatmap_points.append(
+                {
+                    "lat": lat,
+                    "lng": lng,
+                    "aqi": aqi,
+                    "radius_m": radius,
+                }
+            )
+
+        wind_dir = meta.get("wind_dir_deg", 45.0)
+        wind_speed = meta.get("wind_speed", 2.0)
+        try:
+            wind_dir_f = float(wind_dir)
+            wind_speed_f = float(wind_speed)
+        except (TypeError, ValueError):
+            wind_dir_f = 45.0
+            wind_speed_f = 2.0
+        scale = 0.005 * (wind_speed_f / 3.0)
+        rad = math.radians(wind_dir_f)
+        dlat = scale * math.cos(rad)
+        dlng = scale * math.sin(rad)
+        wind_vectors.append(
+            {
+                "start": [lat, lng],
+                "end": [lat + dlat, lng + dlng],
+                "speed": wind_speed_f,
+                "direction_deg": wind_dir_f,
+            }
+        )
+
+    return {"heatmap": heatmap_points, "wind": wind_vectors}
+
+
 class SimulationRequest(BaseModel):
     private_vehicle_reduction: float = 0.0
     odd_even_policy: bool = False
@@ -239,6 +304,31 @@ def get_sensors(db: Session = Depends(get_db)):
     ]
     set_cached_json(cache_key, result, CACHE_TTL_SENSORS)
     return result
+
+
+@router.get("/overlays/current", tags=["overlays"])
+def get_current_overlays(db: Session = Depends(get_db)):
+    cache_key = "overlays:current:v1"
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        return cached
+
+    overlays = build_overlays_from_sensors(db)
+    if not overlays["heatmap"] and not overlays["wind"]:
+        overlays = {
+            "heatmap": [
+                {"lat": 27.71, "lng": 85.32, "aqi": 180, "radius_m": 700},
+                {"lat": 27.69, "lng": 85.34, "aqi": 140, "radius_m": 500},
+                {"lat": 27.7, "lng": 85.29, "aqi": 90, "radius_m": 400},
+            ],
+            "wind": [
+                {"start": [27.7, 85.32], "end": [27.705, 85.325], "speed": 2.0, "direction_deg": 45.0},
+                {"start": [27.69, 85.33], "end": [27.695, 85.335], "speed": 3.0, "direction_deg": 60.0},
+            ],
+        }
+
+    set_cached_json(cache_key, overlays, CACHE_TTL_OVERLAYS)
+    return overlays
 
 
 @router.get("/forecast/{city_id}", tags=["forecast"])
@@ -341,14 +431,42 @@ def simulate(request: SimulationRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/history/summary", tags=["history"])
-def get_history_summary(days: int = 7, db: Session = Depends(get_db)):
-    if days <= 0:
-        days = 7
-    cache_key = f"history:summary:v1:{days}"
+def get_history_summary(
+    days: int = 7,
+    start: str | None = None,
+    end: str | None = None,
+    db: Session = Depends(get_db),
+):
+    start_dt = None
+    end_dt = None
+
+    if start and end:
+        try:
+            start_dt = datetime.fromisoformat(start)
+            end_dt = datetime.fromisoformat(end)
+            if end_dt <= start_dt:
+                start_dt = None
+                end_dt = None
+        except Exception:
+            start_dt = None
+            end_dt = None
+
+    if start_dt and end_dt:
+        cache_key = f"history:summary:v2:{start_dt.date().isoformat()}:{end_dt.date().isoformat()}"
+    else:
+        if days <= 0:
+            days = 7
+        cache_key = f"history:summary:v1:{days}"
+
     cached = get_cached_json(cache_key)
     if cached is not None:
         return cached
-    history = build_history_from_db(db, days)
+
+    if start_dt and end_dt:
+        history = build_history_from_db(db, start=start_dt, end=end_dt)
+    else:
+        history = build_history_from_db(db, days=days)
+
     if history is None:
         history = build_mock_history()
     set_cached_json(cache_key, history, CACHE_TTL_HISTORY)

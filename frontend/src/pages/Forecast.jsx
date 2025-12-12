@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Plot from "react-plotly.js";
 
 const cities = [
   { id: 1, name: "Kathmandu" },
@@ -61,6 +62,43 @@ export default function Forecast() {
                 <div className="mb-1">
                   AQI: {forecasts[city.id]?.aqi_forecast?.[0] ?? "--"}
                 </div>
+                {forecasts[city.id] &&
+                  Array.isArray(forecasts[city.id].aqi_forecast) &&
+                  Array.isArray(forecasts[city.id].traffic_forecast) && (
+                    <div className="mt-2 h-32">
+                      <Plot
+                        data={[
+                          {
+                            x: forecasts[city.id].aqi_forecast.map((_, i) => i + 1),
+                            y: forecasts[city.id].aqi_forecast,
+                            type: "scatter",
+                            mode: "lines+markers",
+                            name: "AQI",
+                            line: { color: "#16a34a" },
+                          },
+                          {
+                            x: forecasts[city.id].traffic_forecast.map((_, i) => i + 1),
+                            y: forecasts[city.id].traffic_forecast,
+                            type: "scatter",
+                            mode: "lines+markers",
+                            name: "Traffic",
+                            line: { color: "#2563eb" },
+                          },
+                        ]}
+                        layout={{
+                          margin: { t: 10, r: 10, b: 24, l: 30 },
+                          xaxis: { title: "Hours ahead", tickfont: { size: 8 } },
+                          yaxis: { title: "Value", tickfont: { size: 8 } },
+                          legend: { orientation: "h", y: -0.3, font: { size: 8 } },
+                          paper_bgcolor: "rgba(0,0,0,0)",
+                          plot_bgcolor: "rgba(0,0,0,0)",
+                          height: 110,
+                        }}
+                        config={{ displayModeBar: false, responsive: true }}
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                    </div>
+                  )}
               </>
             )}
             <div className="text-xs text-gray-400">[Model comparison, CI toggles, CSV export soon]</div>

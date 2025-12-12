@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 
 import { Circle, Polyline, useMap } from "react-leaflet";
 import AnimatedWindArrow from "../components/AnimatedWindArrow";
@@ -20,6 +21,19 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [activeLayer, setActiveLayer] = useState("aqi");
   const [activeOverlays, setActiveOverlays] = useState({ heatmap: false, wind: false, policy: false });
+  const [overlays, setOverlays] = useState({
+    heatmap: [
+      { lat: 27.71, lng: 85.32, aqi: 180, radius_m: 700 },
+      { lat: 27.69, lng: 85.34, aqi: 140, radius_m: 500 },
+      { lat: 27.7, lng: 85.29, aqi: 90, radius_m: 400 },
+    ],
+    wind: [
+      { start: [27.7, 85.32], end: [27.705, 85.325], speed: 2.0 },
+      { start: [27.69, 85.33], end: [27.695, 85.335], speed: 3.0 },
+    ],
+  });
+  const [heatmapPhase, setHeatmapPhase] = useState(0);
+  const [windPhase, setWindPhase] = useState(0);
 
   useEffect(() => {
     fetch("/sensors")
@@ -28,6 +42,30 @@ export default function MapPage() {
         setSensors(data);
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    fetch("/overlays/current")
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        if (!data || typeof data !== "object") return;
+        setOverlays((prev) => ({
+          heatmap:
+            Array.isArray(data.heatmap) && data.heatmap.length ? data.heatmap : prev.heatmap,
+          wind: Array.isArray(data.wind) && data.wind.length ? data.wind : prev.wind,
+        }));
+      })
+      .catch(() => {
+        // keep fallback overlays
+      });
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHeatmapPhase((p) => (p + 0.05) % 1);
+      setWindPhase((p) => (p + 0.05) % 1);
+    }, 120);
+    return () => clearInterval(interval);
   }, []);
 
   // Default Kathmandu Valley center
@@ -42,6 +80,29 @@ export default function MapPage() {
       return null;
     })
     .filter(Boolean);
+
+  const colorForAqi = (aqi) => {
+    if (aqi == null) return "yellow";
+    if (aqi >= 150) return "red";
+    if (aqi >= 100) return "orange";
+    return "yellow";
+  };
+
+  const createWindIcon = (directionDeg, color) => {
+    let angle = 45;
+    if (typeof directionDeg === "number") {
+      angle = directionDeg;
+    } else if (typeof directionDeg === "string") {
+      const parsed = parseFloat(directionDeg);
+      if (!Number.isNaN(parsed)) angle = parsed;
+    }
+    return L.divIcon({
+      className: "wind-arrow-icon",
+      html: `<div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:10px solid ${color};transform:rotate(${angle}deg);"></div>`,
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
+    });
+  };
 
   return (
     <div className="p-6">
@@ -103,16 +164,42 @@ export default function MapPage() {
             attribution="&copy; OpenStreetMap contributors"
           />
           {/* Mock AQI Heatmap overlay (replace with backend data) */}
-          {activeOverlays.heatmap && [
-            <Circle key="heat1" center={[27.71, 85.32]} radius={700} pathOptions={{ color: 'red', fillOpacity: 0.3 }} />,
-            <Circle key="heat2" center={[27.69, 85.34]} radius={500} pathOptions={{ color: 'orange', fillOpacity: 0.2 }} />,
-            <Circle key="heat3" center={[27.7, 85.29]} radius={400} pathOptions={{ color: 'yellow', fillOpacity: 0.15 }} />
-          ]}
-          {/* Mock wind overlay (arrows as polylines) */}
-          {activeOverlays.wind && [
-            <Polyline key="wind1" positions={[[27.7, 85.32], [27.705, 85.325]]} pathOptions={{ color: 'blue', weight: 3 }} />,
-            <Polyline key="wind2" positions={[[27.69, 85.33], [27.695, 85.335]]} pathOptions={{ color: 'blue', weight: 3 }} />
-          ]}
+          {activeOverlays.heatmap &&
+            overlays.heatmap.map((h, idx) => {
+              const baseRadius = h.radius_m || 500;
+              const pulse = 0.8 + 0.4 * Math.sin(2 * Math.PI * heatmapPhase);
+              const radius = baseRadius * pulse;
+              const color = h.color || colorForAqi(h.aqi);
+              const fillOpacity = 0.18 + 0.12 * Math.sin(2 * Math.PI * heatmapPhase);
+              return (
+                <Circle
+                  key={`heat-${idx}`}
+                  center={[h.lat, h.lng]}
+                  radius={radius}
+                  pathOptions={{ color, fillOpacity }}
+                />
+              );
+            })}
+          {/* Wind overlay (animated arrows using custom icon + polylines) */}
+          {activeOverlays.wind &&
+            overlays.wind.map((w, idx) => {
+              const [lat1, lng1] = w.start;
+              const [lat2, lng2] = w.end;
+              const phase = (windPhase + idx * 0.2) % 1;
+              const headLat = lat1 + (lat2 - lat1) * phase;
+              const headLng = lng1 + (lng2 - lng1) * phase;
+              const color = w.color || "blue";
+              const icon = createWindIcon(w.direction_deg, color);
+              return (
+                <React.Fragment key={`wind-${idx}`}>
+                  <Polyline
+                    positions={[[lat1, lng1], [lat2, lng2]]}
+                    pathOptions={{ color, weight: 1, opacity: 0.3 }}
+                  />
+                  <Marker position={[headLat, headLng]} icon={icon} interactive={false} />
+                </React.Fragment>
+              );
+            })}
           {/* Mock policy overlay (polygon boundary) */}
           {activeOverlays.policy && [
             <Polyline key="policy1" positions={[[27.7,85.32],[27.705,85.34],[27.71,85.33],[27.7,85.32]]} pathOptions={{ color: 'green', weight: 4, dashArray: '8 8' }} />
